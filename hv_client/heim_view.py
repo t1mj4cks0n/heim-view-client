@@ -38,7 +38,6 @@ logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format="%(asctime)s -
 
 # --- Helper Functions ---
 def load_config():
-    """Load config, merging with defaults."""
     try:
         if os.path.exists(CONFIG_FILE):
             with open(CONFIG_FILE, "r") as f:
@@ -46,7 +45,8 @@ def load_config():
         else:
             user_config = {}
         config = DEFAULT_CONFIG.copy()
-        config.update(user_config)
+        for key, value in user_config.items():
+            config[key] = value
         return config
     except Exception as e:
         logging.error(f"Error loading config: {e}")

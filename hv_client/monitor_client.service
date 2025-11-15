@@ -6,7 +6,7 @@ After=network.target
 User=root
 WorkingDirectory=/opt/monitor_client
 ExecStart=/usr/bin/python3 /opt/monitor_client/monitor_client.py
-Restart=always
+Restart=on-failure
 RestartSec=30
 
 [Install]
