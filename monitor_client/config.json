@@ -1,0 +1,4 @@
+{
+    "server_url": "http://host:5000/log",
+    "interval_seconds": 30
+}
