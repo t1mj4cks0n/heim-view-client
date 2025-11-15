@@ -13,33 +13,28 @@ import hashlib
 # --- Constants ---
 BASE_DIR = "/opt/heim-view"
 CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
-LOG_FILE = os.path.join(BASE_DIR, "logs", "heim-view.log")
+LOG_FILE = os.path.join(BASE_DIR, "logs", "client.log")
 UPDATE_LOG_FILE = os.path.join(BASE_DIR, "logs", "update.log")
 CACHE_DIR = os.path.join(BASE_DIR, "cache")
 CACHE_FILE = os.path.join(CACHE_DIR, "public_ip_cache.json")
 UPDATE_SCRIPT = "/usr/local/bin/update_heim_view.sh"
-GITHUB_REPO = "https://raw.githubusercontent.com/t1mj4cks0n/heim-view/main"
+GITHUB_REPO = "https://raw.githubusercontent.com/t1mj4cks0n/heim-view-client/main"
 
 # --- Default Config ---
 DEFAULT_CONFIG = {
-    "server_url": "http://your-server-ip:5000/log",
+    "server_url": "http://localhost:5000/api/log",
     "interval_seconds": 30,
     "auto_update": False,
     "github_repo": GITHUB_REPO,
-    "version": "1.0"
+    "version": "1.0",
+    "update_check_interval": 3600  # 1 hour
 }
 
 # --- Setup ---
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 os.makedirs(os.path.dirname(UPDATE_LOG_FILE), exist_ok=True)
 os.makedirs(CACHE_DIR, exist_ok=True)
-
-# Set up logging
-logging.basicConfig(
-    filename=LOG_FILE,
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # --- Helper Functions ---
 def load_config():
@@ -67,35 +62,17 @@ def ensure_cache_exists():
     except IOError as e:
         logging.error(f"Error creating cache: {e}")
 
-def load_cache():
-    """Load cached IP and timestamp."""
-    if os.path.exists(CACHE_FILE):
-        try:
-            with open(CACHE_FILE, 'r') as f:
-                cache = json.load(f)
-                return cache.get('ip'), cache.get('timestamp', 0)
-        except (json.JSONDecodeError, IOError) as e:
-            logging.error(f"Error loading cache: {e}")
-    return None, 0
-
-def save_cache(ip, timestamp):
-    """Save cached IP and timestamp."""
-    try:
-        with open(CACHE_FILE, 'w') as f:
-            json.dump({'ip': ip, 'timestamp': timestamp}, f)
-    except IOError as e:
-        logging.error(f"Error saving cache: {e}")
-
 def check_for_updates(config):
     """Check GitHub for updates and trigger update script if needed."""
     if not config.get("auto_update", False):
         return False
     try:
+        last_check = getattr(check_for_updates, "last_check", 0)
+        if time.time() - last_check < config.get("update_check_interval", 3600):
+            return False
+        check_for_updates.last_check = time.time()
         logging.info("Checking for updates...")
-        response = requests.get(
-            f"{config['github_repo']}/heim-view.py",
-            timeout=10
-        )
+        response = requests.get(f"{config['github_repo']}/heim-view.py", timeout=10)
         response.raise_for_status()
         new_script = response.text
         new_hash = hashlib.sha256(new_script.encode()).hexdigest()
@@ -103,11 +80,7 @@ def check_for_updates(config):
             current_hash = hashlib.sha256(f.read().encode()).hexdigest()
         if new_hash != current_hash:
             logging.info("Update available. Triggering update script...")
-            subprocess.Popen(
-                [UPDATE_SCRIPT, config["github_repo"]],
-                stdout=open(UPDATE_LOG_FILE, "a"),
-                stderr=subprocess.STDOUT
-            )
+            subprocess.Popen([UPDATE_SCRIPT, config["github_repo"]], stdout=open(UPDATE_LOG_FILE, "a"), stderr=subprocess.STDOUT)
             return True
     except Exception as e:
         logging.error(f"Update check failed: {e}")
@@ -217,16 +190,8 @@ def get_boot_time():
 def get_outdated_packages():
     """Get list of upgradable packages."""
     try:
-        result = subprocess.run(
-            ['apt', 'list', '--upgradable'],
-            capture_output=True,
-            text=True
-        )
-        outdated_packages = [
-            line.split('/')[0]
-            for line in result.stdout.splitlines()
-            if '/' in line
-        ]
+        result = subprocess.run(['apt', 'list', '--upgradable'], capture_output=True, text=True)
+        outdated_packages = [line.split('/')[0] for line in result.stdout.splitlines() if '/' in line]
         return {'outdated_packages': outdated_packages}
     except Exception as e:
         logging.error(f"Error getting outdated packages: {e}")
@@ -246,11 +211,7 @@ def get_network_interfaces():
                     current_interface = None
                 else:
                     current_interface = interface_name
-                    interfaces.append({
-                        'int_face_name': current_interface,
-                        'int_face_mac': None,
-                        'int_face_ip': None
-                    })
+                    interfaces.append({'int_face_name': current_interface, 'int_face_mac': None, 'int_face_ip': None})
             elif current_interface and 'link/ether' in line:
                 mac = line.split('link/ether')[1].split()[0].strip()
                 for iface in interfaces:
@@ -283,16 +244,31 @@ def get_public_ip():
         logging.error(f"Error fetching public IP: {e}")
         return {'public_ip': cached_ip}
 
-def send_to_server(data, server_url):
-    """Send stats to the logging server."""
+def load_cache():
+    """Load cached IP and timestamp."""
+    if os.path.exists(CACHE_FILE):
+        try:
+            with open(CACHE_FILE, 'r') as f:
+                cache = json.load(f)
+                return cache.get('ip'), cache.get('timestamp', 0)
+        except (json.JSONDecodeError, IOError) as e:
+            logging.error(f"Error loading cache: {e}")
+    return None, 0
+
+def save_cache(ip, timestamp):
+    """Save cached IP and timestamp."""
     try:
+        with open(CACHE_FILE, 'w') as f:
+            json.dump({'ip': ip, 'timestamp': timestamp}, f)
+    except IOError as e:
+        logging.error(f"Error saving cache: {e}")
+
+def send_to_server(data, server_url):
+    """Send stats to the Heim-View Server."""
+    try:
+        data["client_version"] = DEFAULT_CONFIG["version"]
         response = requests.post(server_url, json=data, timeout=10)
-        if response.status_code == 200:
-            logging.info("Data sent successfully")
-            return True
-        else:
-            logging.error(f"Server error: {response.status_code} - {response.text}")
-            return False
+        return response.status_code == 200
     except Exception as e:
         logging.error(f"Failed to send data: {e}")
         return False
@@ -323,7 +299,6 @@ if __name__ == "__main__":
         if config.get("auto_update", False):
             check_for_updates(config)
         stats = dict(get_stats())
-        stats["client_version"] = config.get("version", "1.0")
         success = send_to_server(stats, config["server_url"])
         if not success:
             logging.warning("Failed to send data. Retrying next interval.")
