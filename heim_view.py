@@ -28,7 +28,7 @@ DEFAULT_CONFIG = {
     "auto_update": False,
     "github_repo": GITHUB_REPO,
     "version": "1.0",
-    "update_check_interval": 3600  # 1 hour
+    "public_ip_update_check_interval": 3600  # 1 hour
 }
 
 # --- Setup ---
@@ -280,6 +280,7 @@ if __name__ == "__main__":
     logging.info(f"Starting heim-view v{config.get('version', '1.0')}")
     while True:
         stats = dict(get_stats())
+
         success = send_to_server(stats, config["server_url"])
         if not success:
             logging.warning("Failed to send data. Retrying next interval.")
