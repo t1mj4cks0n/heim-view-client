@@ -1,10 +1,10 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 import os
 import json
 import time
 import logging
 import subprocess
-import requests
+import urllib.request
 from urllib.request import urlopen
 from collections import ChainMap
 import datetime
@@ -241,11 +241,17 @@ def save_cache(ip, timestamp):
         logging.error(f"Error saving cache: {e}")
 
 def send_to_server(data, server_url):
-    """Send stats to the Heim-View Server."""
+    """Send stats to the Heim-View Server using urllib."""
     try:
         data["client_version"] = DEFAULT_CONFIG["version"]
-        response = requests.post(server_url, json=data, timeout=10)
-        return response.status_code == 200
+        req = urllib.request.Request(
+            server_url,
+            data=json.dumps(data).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=10) as response:
+            return response.status == 200
     except Exception as e:
         logging.error(f"Failed to send data: {e}")
         return False
@@ -273,8 +279,6 @@ if __name__ == "__main__":
     ensure_cache_exists()
     logging.info(f"Starting heim-view v{config.get('version', '1.0')}")
     while True:
-        if config.get("auto_update", False):
-            check_for_updates(config)
         stats = dict(get_stats())
         success = send_to_server(stats, config["server_url"])
         if not success:
