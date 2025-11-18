@@ -1,9 +1,43 @@
 #!/bin/bash
 set -euo pipefail
 
+# Check if running as root (via sudo)
+if [ "$(id -u)" -ne 0 ]; then
+    echo "This script requires root privileges for service installation."
+    echo "Please run with sudo: sudo $0"
+    exit 1
+fi
+
 # get current script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
+
+# Check for main Python script
+PYTHON_SCRIPT=""
+if [ -f "heim_view.py" ]; then
+    PYTHON_SCRIPT="heim-view.py"
+else
+    # Try to find any Python file that might be the main script
+    PY_FILES=(*.py)
+    if [ ${#PY_FILES[@]} -eq 1 ]; then
+        PYTHON_SCRIPT="${PY_FILES[0]}"
+    elif [ ${#PY_FILES[@]} -gt 1 ]; then
+        echo "Multiple Python files found:"
+        select file in "${PY_FILES[@]}"; do
+            if [ -n "$file" ]; then
+                PYTHON_SCRIPT="$file"
+                break
+            fi
+        done
+    fi
+fi
+
+# If we still don't have a script, exit with error
+if [ -z "$PYTHON_SCRIPT" ]; then
+    echo "ERROR: No Python script found in $SCRIPT_DIR"
+    echo "Please ensure heim-view.py or heim_view.py exists"
+    exit 1
+fi
 
 # build file structure
 mkdir -p data/logs
@@ -109,7 +143,7 @@ After=network.target
 [Service]
 User=$USERNAME
 WorkingDirectory=$SCRIPT_DIR
-ExecStart=$SCRIPT_DIR/heim-view.py
+ExecStart=$SCRIPT_DIR/heim_view.py
 Restart=always
 RestartSec=5s
 
